@@ -8,8 +8,6 @@ module gstorm512_top #(
     input  logic [511:0] g_in,
     input  logic         p_in,
     output logic [511:0] s_out,
-    output logic [63:0]  link_entropy,
-    output logic         reroute_trigger,
     output logic         link_stable
 );
 
@@ -20,6 +18,10 @@ module gstorm512_top #(
     logic [511:0] mutated_shadow;
     logic [511:0] capacity_resolved_shadow;
     logic         matrix_stable;
+    logic [63:0]  cumulative_entropy;
+    logic         proactive_alert;
+    logic [511:0] hr_filtered_data;
+    logic         jamming_alert;
 
     sr512_core #(
         .KA_ANCHOR(KA_ANCHOR_TOP)
@@ -65,13 +67,22 @@ module gstorm512_top #(
         .clk            (clk),
         .rst_n          (rst_n),
         .delta_n        (pipeline_delta),
-        .e_drift        (link_entropy),
-        .proactive_alert(reroute_trigger)
+        .e_drift        (cumulative_entropy),
+        .proactive_alert(proactive_alert)
+    );
+
+    hr512_core stage4_hr_inst (
+        .clk             (clk),
+        .rst_n           (rst_n),
+        .s_rec_in        (gs_to_hr_data),
+        .e_drift_in      (cumulative_entropy),
+        .s_out           (hr_filtered_data),
+        .jamming_detected(jamming_alert)
     );
 
     always_comb begin
-        if (gs_valid && matrix_stable) begin
-            s_out        = gs_to_hr_data;
+        if (gs_valid && matrix_stable && !jamming_alert) begin
+            s_out        = hr_filtered_data;
             link_stable  = 1'b1;
         } else begin
             s_out        = sr_to_gs_data;
